@@ -78,8 +78,8 @@ def rag_answer(question: str, k: int = 5) -> str:
 # -----------------------------
 # Single-page layout: ML first, then RAG
 # -----------------------------
-st.title("ESG Energy Efficiency Agent")
-st.caption("Live demo — building inputs → ML prediction → ESG impact estimates")
+st.title("ESG Energy & Emissions Optimization Agent")
+st.caption("Live demo — building inputs → ML prediction → ESG impact estimates → Ask Questions")
 st.caption("The model estimates post-intervention energy-savings potential by learning from patterns in retrofit outcomes of buildings with similar pre-intervention characteristics.")
 
 # -----------------------------
@@ -139,8 +139,8 @@ st.divider()
 # -----------------------------
 # RAG Knowledge Base Assistant (same page, below ML)
 # -----------------------------
-st.header("📚 Ask the Knowledge Base (RAG)")
-st.caption("Grounded answers with evidence from the project docs. Decision-support only. No certified ratings.")
+st.header("🧠 Decision Rationale & Evidence Assistant")
+st.caption("Provides evidence-grounded explanations, limitations, and governance context to support responsible decision-making. No certified ratings.")
 
 if not RAG_READY:
     st.warning(
