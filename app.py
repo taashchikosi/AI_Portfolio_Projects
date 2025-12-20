@@ -88,7 +88,7 @@ st.subheader("How to use this tool")
 st.caption("1. Enter the building’s current baseline characteristics.")
 st.caption("2. Allow the machine to predict potential ESG outcomes.")
 st.caption("3. Review estimated energy, cost, and emissions impacts.")
-st.caption("4. Use the Assistant to understand assumptions, limitations, and governance implications.")
+st.caption("4. Use the Assistant to ask questions, understand assumptions, limitations, and governance implications.")
 st.caption("5. Apply insights for prioritisation — not certification.")
 
 # -----------------------------
