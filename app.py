@@ -212,26 +212,6 @@ st.download_button(
     mime="application/pdf",
 )
 
-# 2) Open in new tab link (best viewing experience)
-import streamlit as st
-import streamlit.components.v1 as components
-
-st.markdown("---")
-st.markdown("## 📄 Full Consulting Report")
-
-PDF_URL = "https://github.com/taashchikosi/esg-energy-efficiency-agent/raw/6b74272a75edf89c8da4c013ad94d23f84877129/ESG_Energy_and_Emissions_Optimization_Agent.pdf"
-
-# 1) Open in new tab (PRIMARY – works everywhere)
-st.link_button("🔗 Open Report in New Tab", PDF_URL)
-
-# 2) Inline preview (SECONDARY – may be blocked by browser)
-with st.expander("📘 View Full Report (Inline Preview)"):
-    components.iframe(PDF_URL, height=900, scrolling=True)
-
-st.caption(
-    "Tip: Use “Open Report in New Tab” for the best reading experience. "
-    "Inline preview availability depends on browser security settings."
-)
 
 
 
