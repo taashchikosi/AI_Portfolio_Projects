@@ -1,7 +1,7 @@
 streamlit>=1.36
 pandas>=2.2
 numpy>=1.26
-scikit-learn>=1.5
+scikit-learn==1.6.1
 xgboost>=2.1
 matplotlib>=3.9
 plotly>=5.23
@@ -17,5 +17,5 @@ tiktoken
 openai
 
 # ML artifacts + downloads
-joblib
+joblib==1.4.2
 requests
