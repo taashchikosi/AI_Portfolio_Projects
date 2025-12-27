@@ -204,8 +204,11 @@ st.write(
     "modeling approach, governance design, and deployment scope."
 )
 
-with open("ESG_Energy_and_Emissions_Optimization_Agent.pdf", "rb") as f:
+pdf_path = Path(__file__).resolve().parent / "ESG_Energy_and_Emissions_Optimization_Agent.pdf"
+
+with open(pdf_path, "rb") as f:
     pdf_bytes = f.read()
+
 
 base64_pdf = base64.b64encode(pdf_bytes).decode("utf-8")
 
