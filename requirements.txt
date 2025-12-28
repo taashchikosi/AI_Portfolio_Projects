@@ -18,4 +18,4 @@ openai
 
 # ML artifacts + downloads
 joblib==1.4.2
-requests
+
