@@ -1,13 +1,17 @@
-# app.py — FULL COPY/PASTE (ESG tab + NEW Healthcare tab)
+# app.py — FULL COPY/PASTE
 # -------------------------------------------------------
-# ✅ What you MUST do after pasting:
-# 1) In requirements.txt add: requests
-# 2) Paste your two GitHub Release asset links below (HEALTH_MODELS_URL / HEALTH_META_URL)
-#    They must look like: .../releases/download/healthcare-v1/models.joblib
-# 3) Keep your ESG files/folders exactly as-is:
-#    - src/ml/predict.py  (EnergySavingsPredictor)
-#    - rag_project_artifacts/vector_store  (Chroma persist dir)
-#    - ESG_Energy_and_Emissions_Optimization_Agent.pdf  (repo root)
+# ✅ What you MUST have in the repo (same as before, plus 1 new folder):
+# ESG:
+#   - src/ml/predict.py
+#   - rag_project_artifacts/vector_store
+#   - ESG_Energy_and_Emissions_Optimization_Agent.pdf
+# Healthcare:
+#   - healthcare_project_artifacts is auto-created at runtime (downloads Release assets)
+#   - NEW: healthcare_rag_project_artifacts/vector_store   <-- you will create this (Chroma persist dir)
+#   - (optional later) Healthcare_Patient_Flow_Optimization_Agent.pdf
+#
+# ✅ In Streamlit Secrets:
+#   OPENAI_API_KEY = "..."
 
 import os
 import json
@@ -23,12 +27,10 @@ from langchain_community.vectorstores import Chroma
 
 from src.ml.predict import EnergySavingsPredictor
 
-
 # -----------------------------
 # Page Config
 # -----------------------------
 st.set_page_config(page_title="AI Portfolio — Decision Support Agents", layout="wide")
-
 BASE_DIR = Path(__file__).resolve().parent
 
 # -----------------------------
@@ -39,21 +41,22 @@ if "OPENAI_API_KEY" in st.secrets:
 
 
 # ============================================================
-# ESG — RAG Setup (loads Chroma DB from rag_project_artifacts/vector_store)
+# Shared LLM loader (used by both RAG assistants)
+# ============================================================
+@st.cache_resource
+def load_llm():
+    return ChatOpenAI(model="gpt-4.1-mini", temperature=0)
+
+
+# ============================================================
+# ESG — RAG Setup (Chroma persist dir)
 # ============================================================
 ESG_RAG_DB_DIR = BASE_DIR / "rag_project_artifacts" / "vector_store"
 
 @st.cache_resource
 def load_esg_vectordb(persist_dir: Path):
     embeddings = OpenAIEmbeddings()
-    return Chroma(
-        persist_directory=str(persist_dir),
-        embedding_function=embeddings
-    )
-
-@st.cache_resource
-def load_llm():
-    return ChatOpenAI(model="gpt-4.1-mini", temperature=0)
+    return Chroma(persist_directory=str(persist_dir), embedding_function=embeddings)
 
 ESG_SYSTEM_PROMPT = """
 You are an energy-efficiency decision-support assistant.
@@ -106,18 +109,11 @@ HEALTH_MODELS_PATH = HEALTH_ARTIFACTS_DIR / "models.joblib"
 HEALTH_META_PATH   = HEALTH_ARTIFACTS_DIR / "model_meta.json"
 
 # 🔴 PASTE YOUR *DIRECT* GITHUB RELEASE ASSET LINKS HERE:
-# Example:
-# HEALTH_MODELS_URL = "https://github.com/<user>/<repo>/releases/download/healthcare-v1/models.joblib"
-# HEALTH_META_URL   = "https://github.com/<user>/<repo>/releases/download/healthcare-v1/model_meta.json"
 HEALTH_MODELS_URL = "https://github.com/taashchikosi/esg-energy-efficiency-agent/releases/download/healthcare-v1/models.joblib"
 HEALTH_META_URL   = "https://github.com/taashchikosi/esg-energy-efficiency-agent/releases/download/healthcare-v1/model_meta.json"
 
 @st.cache_resource
 def ensure_healthcare_artifacts():
-    """
-    Downloads the Healthcare artifacts once (cached by Streamlit).
-    This makes the Healthcare tab WORK on Streamlit Cloud without committing large model files to the repo.
-    """
     # meta first (small)
     if not HEALTH_META_PATH.exists():
         r = requests.get(HEALTH_META_URL, timeout=60)
@@ -132,18 +128,53 @@ def ensure_healthcare_artifacts():
 
     return True
 
-
 @st.cache_resource
 def load_healthcare_artifacts():
-    """
-    Requires:
-      - healthcare_project_artifacts/models.joblib
-      - healthcare_project_artifacts/model_meta.json
-    """
     models = joblib.load(HEALTH_MODELS_PATH)
     with open(HEALTH_META_PATH, "r") as f:
         meta = json.load(f)
     return models, meta
+
+
+# ============================================================
+# Healthcare — RAG Setup (NEW)
+# ============================================================
+HEALTH_RAG_DB_DIR = BASE_DIR / "healthcare_rag_project_artifacts" / "vector_store"
+
+@st.cache_resource
+def load_health_vectordb(persist_dir: Path):
+    embeddings = OpenAIEmbeddings()
+    return Chroma(persist_directory=str(persist_dir), embedding_function=embeddings)
+
+HEALTH_SYSTEM_PROMPT = """
+You are a hospital patient-flow decision-support assistant.
+
+Rules (must follow):
+- Use ONLY the provided CONTEXT for factual claims.
+- Do NOT invent clinical facts, hospital policies, or staffing rules.
+- If the CONTEXT is insufficient, say so and ask a specific follow-up question.
+- Always include citations to the retrieved sources.
+
+Return format:
+1) Answer
+2) Why
+3) Evidence (bullets with source + chunk)
+4) Confidence (High/Medium/Low)
+5) Human Review Trigger (Yes/No + reason)
+"""
+
+def health_rag_answer(vectordb, question: str, k: int = 5) -> str:
+    hits = vectordb.similarity_search(question, k=k)
+    context = "\n\n".join(
+        f"[SOURCE: {h.metadata.get('source')} | CHUNK: {h.metadata.get('chunk')}]\n{h.page_content}"
+        for h in hits
+    )
+    prompt = f"QUESTION:\n{question}\n\nCONTEXT:\n{context}"
+    llm = load_llm()
+    return llm.invoke([
+        {"role": "system", "content": HEALTH_SYSTEM_PROMPT},
+        {"role": "user", "content": prompt}
+    ]).content
 
 
 # ============================================================
@@ -228,7 +259,7 @@ tab_esg, tab_health = st.tabs([
 
 
 # ============================================================
-# TAB 1 — ESG (your original app, preserved)
+# TAB 1 — ESG (unchanged)
 # ============================================================
 with tab_esg:
     st.title("ESG Energy & Emissions Optimization Agent")
@@ -252,7 +283,6 @@ with tab_esg:
     st.caption("3. Use the Assistant to ask questions -> Interogate the rationale, understand assumptions, limitations, & governance implications.")
     st.caption("4. Decide next action —> investigate further, prioritise or deprioritize buildings")
 
-    # ML Predictor
     st.subheader("1) Building Baseline")
     st.caption("Describe the current (pre-retrofit) state of the building. These inputs define the baseline against which potential improvements are estimated.")
 
@@ -300,12 +330,10 @@ with tab_esg:
 
     st.divider()
 
-    # RAG Knowledge Base Assistant
     st.header("🧠 Decision Rationale & Evidence Assistant")
-    st.caption("I provide evidence-grounded explanations, limitations, and governance context to support responsible ESG-aligned investment and prioritization decision-making. Ask me anything!")
+    st.caption("Evidence-grounded explanations, limitations, and governance context. Ask anything!")
 
     ESG_RAG_READY = bool(os.environ.get("OPENAI_API_KEY")) and ESG_RAG_DB_DIR.exists()
-
     if not ESG_RAG_READY:
         st.warning(
             "RAG is not ready.\n\n"
@@ -335,15 +363,12 @@ with tab_esg:
 
     st.caption("This demo uses synthetic and simulation-informed data to demonstrate decision-support workflows. Outputs are directional and intended for prioritisation, not certification.")
 
-    # ESG PDF Download
     st.markdown("---")
     st.markdown("## 📄 Full Consulting Report")
-
     esg_pdf_file = "ESG_Energy_and_Emissions_Optimization_Agent.pdf"
     try:
         with open(esg_pdf_file, "rb") as f:
             pdf_bytes = f.read()
-
         st.download_button(
             label="⬇️ Download Report (PDF)",
             data=pdf_bytes,
@@ -351,14 +376,11 @@ with tab_esg:
             mime="application/pdf",
         )
     except FileNotFoundError:
-        st.info(
-            f"PDF not found: {esg_pdf_file}\n\n"
-            "Upload it to the repo root (same folder as app.py)."
-        )
+        st.info(f"PDF not found: {esg_pdf_file}\n\nUpload it to the repo root (same folder as app.py).")
 
 
 # ============================================================
-# TAB 2 — Healthcare (NEW)
+# TAB 2 — Healthcare (NOW with RAG)
 # ============================================================
 with tab_health:
     st.title("Healthcare Patient-Flow Optimization Agent")
@@ -369,13 +391,11 @@ with tab_health:
         "It is designed for screening and prioritization (early warning), not automated staffing or clinical decisions."
     )
 
-    # Download artifacts from GitHub Release (so the tab actually works)
+    # Download artifacts from GitHub Release
     try:
-        # If you forgot to paste URLs, fail with a clear message
         if "PASTE_" in HEALTH_MODELS_URL or "PASTE_" in HEALTH_META_URL:
             st.error("Healthcare Release URLs are not set. Paste the two GitHub Release asset links into HEALTH_MODELS_URL and HEALTH_META_URL at the top of app.py.")
             st.stop()
-
         ensure_healthcare_artifacts()
     except Exception as e:
         st.error(f"Failed to download Healthcare model artifacts: {e}")
@@ -435,9 +455,44 @@ with tab_health:
         with st.expander("Show constructed model inputs (feature row)"):
             st.dataframe(X)
 
+    st.divider()
+
+    # -----------------------------
+    # Healthcare RAG Assistant (NEW)
+    # -----------------------------
+    st.header("🧠 Decision Rationale & Evidence Assistant")
+    st.caption("Evidence-grounded explanations for how to interpret outputs, limitations, governance triggers, and safe use.")
+
+    HEALTH_RAG_READY = bool(os.environ.get("OPENAI_API_KEY")) and HEALTH_RAG_DB_DIR.exists()
+    if not HEALTH_RAG_READY:
+        st.warning(
+            "Healthcare RAG is not ready.\n\n"
+            "Fix checklist:\n"
+            "1) Add OPENAI_API_KEY in Streamlit Secrets\n"
+            "2) Ensure healthcare_rag_project_artifacts/vector_store exists in this repo"
+        )
+    else:
+        health_vectordb = load_health_vectordb(HEALTH_RAG_DB_DIR)
+        qh = st.text_input("Ask a question", key="health_q", placeholder="e.g., What does HIGH risk mean and what should I do next?")
+        askh = st.button("Ask", key="health_ask")
+
+        if askh and qh.strip():
+            with st.spinner("Retrieving evidence and generating answer..."):
+                ans = health_rag_answer(health_vectordb, qh.strip())
+            st.markdown("### Response")
+            st.write(ans)
+
+        with st.expander("Suggested demo questions"):
+            st.write(
+                "1) What does HIGH risk mean in this demo?\n"
+                "2) What are the model limitations and what can it NOT be used for?\n"
+                "3) What data does the model learn from and what is the time split logic?\n"
+                "4) When should a human review be triggered and why?\n"
+                "5) How should an operations lead communicate outputs responsibly?\n"
+            )
+
     st.markdown("---")
     st.markdown("## 📄 Full Consulting Report (Healthcare)")
-
     health_pdf_file = "Healthcare_Patient_Flow_Optimization_Agent.pdf"
     try:
         with open(health_pdf_file, "rb") as f:
