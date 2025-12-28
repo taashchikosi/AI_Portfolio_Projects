@@ -139,7 +139,7 @@ def load_healthcare_artifacts():
 # ============================================================
 # Healthcare — RAG Setup (NEW)
 # ============================================================
-HEALTH_RAG_DB_DIR = BASE_DIR / "healthcare_rag_project_artifacts" / "vector_store"
+HEALTH_RAG_DB_DIR = BASE_DIR / "healthcare_rag_artifacts" / "vector_store"
 
 @st.cache_resource
 def load_health_vectordb(persist_dir: Path):
