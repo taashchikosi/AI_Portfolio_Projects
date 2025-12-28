@@ -1,0 +1,28 @@
+{
+  "features": [
+    "capacity_beds",
+    "occupancy_ratio",
+    "arrivals",
+    "staff_index",
+    "wait_minutes",
+    "hour",
+    "dayofweek",
+    "month",
+    "is_weekend",
+    "arrivals_roll_mean_24h",
+    "arrivals_roll_max_24h",
+    "occ_roll_mean_24h",
+    "occ_roll_max_24h",
+    "wait_roll_mean_24h",
+    "wait_roll_max_24h"
+  ],
+  "target_occ": "target_max_occ_ratio_24h",
+  "target_wait": "target_mean_wait_24h",
+  "timestamp_cutoff_80pct": "2024-10-18 10:00:00",
+  "metrics": {
+    "mae_occ": 0.012575094606694997,
+    "rmse_occ": 0.017640788832650633,
+    "mae_wait": 5.1695775964786685,
+    "rmse_wait": 6.588640241669183
+  }
+}
