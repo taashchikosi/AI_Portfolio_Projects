@@ -492,7 +492,7 @@ with tab_health:
             )
 
     st.markdown("---")
-    st.markdown("## 📄 Full Consulting Report (Healthcare)")
+    st.markdown("## 📄 Full Consulting Report ")
     health_pdf_file = "Healthcare_Patient_Flow_Optimization_Agent.pdf"
     try:
         with open(health_pdf_file, "rb") as f:
