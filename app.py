@@ -364,7 +364,7 @@ with tab_esg:
     st.caption("This demo uses synthetic and simulation-informed data to demonstrate decision-support workflows. Outputs are directional and intended for prioritisation, not certification.")
 
     st.markdown("---")
-    st.markdown("## 📄 Full Consulting Report - Decision-Support Analysis for Retrofit Prioritisation & Capital Allocation")
+    st.markdown("## 📄 Full Consulting Report - Decision-Support Analysis for Retrofit Prioritisation ")
     esg_pdf_file = "ESG_Energy_and_Emissions_Optimization_Agent.pdf"
     try:
         with open(esg_pdf_file, "rb") as f:
@@ -492,7 +492,7 @@ with tab_health:
             )
 
     st.markdown("---")
-    st.markdown("## 📄 Full Consulting Report - Decision-Support Analysis for Early Operational Screening and Prioritisation ")
+    st.markdown("## 📄 Full Consulting Report - Decision-Support Analysis for Early Operational Screening ")
     health_pdf_file = "Healthcare_Patient_Flow_Optimization_Agent.pdf"
     try:
         with open(health_pdf_file, "rb") as f:
