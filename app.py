@@ -670,9 +670,28 @@ with tab_retail:
         st.stop()
 
     # ---- Predict demand
-    X_cols_num = retail_meta["features_num"]
-    X_cols_cat = retail_meta["features_cat"]  # should be ["category"]
-    X_pred = snap[X_cols_num + X_cols_cat].copy()
+    # ---- Robust feature alignment (fixes Category vs category + casing drift)
+    snap.columns = [c.strip().lower() for c in snap.columns]
+
+    X_cols_num = [c.strip().lower() for c in retail_meta["features_num"]]
+    X_cols_cat = [c.strip().lower() for c in retail_meta["features_cat"]]
+
+    # If meta mistakenly stored "category" as "Category" earlier, this forces alignment
+    if "category" not in snap.columns and "category" in X_cols_cat:
+    # (Nothing to do: snap already lowercased; this is here for clarity)
+        pass
+
+    # Fail-fast with a readable message if anything still missing
+    needed = X_cols_num + X_cols_cat
+    missing = [c for c in needed if c not in snap.columns]
+    if missing:
+        st.error("Retail model features missing from dataset (schema mismatch).")
+        st.write("Missing columns:", missing)
+        st.write("Available columns (sample):", list(snap.columns)[:40])
+        st.stop()
+
+    X_pred = snap[needed].copy()
+
 
     snap["pred_next_day_demand"] = np.clip(demand_model.predict(X_pred), 0, None)
 
