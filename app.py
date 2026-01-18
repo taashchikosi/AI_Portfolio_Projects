@@ -673,6 +673,23 @@ with tab_retail:
     # ---- Robust feature alignment (fixes Category vs category + casing drift)
     snap.columns = [c.strip().lower() for c in snap.columns]
 
+    # --- Fix: resolve category suffixes from merges (category_x/category_y -> category)
+    snap.columns = [c.strip().lower() for c in snap.columns]
+
+    if "category" not in snap.columns:
+        if "category_x" in snap.columns and "category_y" in snap.columns:
+            snap["category"] = snap["category_x"].fillna(snap["category_y"])
+        elif "category_x" in snap.columns:
+            snap["category"] = snap["category_x"]
+        elif "category_y" in snap.columns:
+            snap["category"] = snap["category_y"]
+
+    # Optional: drop suffix columns to avoid confusion later
+    for c in ["category_x", "category_y"]:
+        if c in snap.columns:
+            snap.drop(columns=[c], inplace=True)
+
+
     X_cols_num = [c.strip().lower() for c in retail_meta["features_num"]]
     X_cols_cat = [c.strip().lower() for c in retail_meta["features_cat"]]
 
