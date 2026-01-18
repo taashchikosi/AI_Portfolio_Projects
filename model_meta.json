@@ -1,0 +1,30 @@
+{
+  "model_type": "HistGradientBoostingRegressor",
+  "target": "next_day_units_sold",
+  "features_num": [
+    "price",
+    "is_promo",
+    "discount",
+    "dow",
+    "is_weekend",
+    "is_peak_season",
+    "is_summer",
+    "on_hand",
+    "on_order_qty",
+    "in_transit_orders",
+    "lead_time_mean_days",
+    "lead_time_sd_days",
+    "lag_1",
+    "lag_7",
+    "lag_14",
+    "lag_28",
+    "roll7_mean",
+    "roll14_mean",
+    "roll14_std"
+  ],
+  "features_cat": [
+    "category"
+  ],
+  "mae": 0.6548269139234132,
+  "seed": 42
+}
