@@ -1,17 +1,5 @@
-# app.py — FULL COPY/PASTE
-# -------------------------------------------------------
-# ✅ What you MUST have in the repo (same as before, plus 1 new folder):
-# ESG:
-#   - src/ml/predict.py
-#   - rag_project_artifacts/vector_store
-#   - ESG_Energy_and_Emissions_Optimization_Agent.pdf
-# Healthcare:
-#   - healthcare_project_artifacts is auto-created at runtime (downloads Release assets)
-#   - NEW: healthcare_rag_project_artifacts/vector_store   <-- you will create this (Chroma persist dir)
-#   - (optional later) Healthcare_Patient_Flow_Optimization_Agent.pdf
-#
-# ✅ In Streamlit Secrets:
-#   OPENAI_API_KEY = "..."
+# app.py — FULL COPY/PASTE (ESG + Healthcare + Retail tab)
+# Source base: your uploaded "app ESG & Healthcare.py" :contentReference[oaicite:0]{index=0}
 
 import os
 import json
@@ -19,8 +7,10 @@ import joblib
 import requests
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 import streamlit as st
+from scipy.stats import norm
 
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain_community.vectorstores import Chroma
@@ -247,14 +237,125 @@ def predict_healthcare(models, X):
 
 
 # ============================================================
+# Retail — Artifacts + Helpers (NEW TAB)
+# ============================================================
+RETAIL_DIR = BASE_DIR / "retail_project_artifacts"
+
+RETAIL_REQUIRED_FILES = [
+    "models.joblib",
+    "model_meta.json",
+    "products.csv",
+    "stores.csv",
+    "suppliers.csv",
+    "daily_sales.csv",
+    "inventory_positions.csv",
+]
+
+@st.cache_resource
+def load_retail_model():
+    models_path = RETAIL_DIR / "models.joblib"
+    meta_path = RETAIL_DIR / "model_meta.json"
+    models = joblib.load(models_path)
+    meta = json.loads(meta_path.read_text())
+    # saved as {"demand_model": pipeline}
+    return models["demand_model"], meta
+
+@st.cache_data
+def load_retail_data():
+    products = pd.read_csv(RETAIL_DIR / "products.csv")
+    stores = pd.read_csv(RETAIL_DIR / "stores.csv")
+    suppliers = pd.read_csv(RETAIL_DIR / "suppliers.csv")
+    sales = pd.read_csv(RETAIL_DIR / "daily_sales.csv", parse_dates=["date"])
+    inv = pd.read_csv(RETAIL_DIR / "inventory_positions.csv", parse_dates=["date"])
+    return products, stores, suppliers, sales, inv
+
+def retail_calendar(dates):
+    cal = pd.DataFrame({"date": pd.to_datetime(dates)})
+    cal["dow"] = cal["date"].dt.dayofweek
+    cal["is_weekend"] = (cal["dow"] >= 5).astype(int)
+    cal["month"] = cal["date"].dt.month
+    cal["is_peak_season"] = cal["month"].isin([11, 12]).astype(int)
+    cal["is_summer"] = cal["month"].isin([12, 1, 2]).astype(int)
+    return cal
+
+def build_retail_feature_frame(products, suppliers, sales, inv):
+    # normalize column names
+    for d in (products, suppliers, sales, inv):
+        d.columns = [c.strip().lower() for c in d.columns]
+
+    # normalize keys (prevents join drops)
+    for d in (products, suppliers, sales, inv):
+        if "sku_id" in d.columns:
+            d["sku_id"] = d["sku_id"].astype(str).str.strip()
+        if "store_id" in d.columns:
+            d["store_id"] = d["store_id"].astype(str).str.strip()
+
+    df = sales.merge(inv, on=["date", "sku_id", "store_id"], how="left")
+    df = df.merge(
+        products[[
+            "sku_id",
+            "category",
+            "base_price",
+            "unit_cost",
+            "gross_margin_pct",
+            "annual_holding_cost_pct",
+            "stockout_penalty_factor"
+        ]],
+        on="sku_id",
+        how="left"
+    )
+    df = df.merge(
+        suppliers[["sku_id", "lead_time_mean_days", "lead_time_sd_days"]],
+        on="sku_id",
+        how="left"
+    )
+
+    dates = pd.DatetimeIndex(df["date"].unique()).sort_values()
+    df = df.merge(retail_calendar(dates), on="date", how="left")
+
+    df = df.sort_values(["sku_id", "store_id", "date"])
+
+    for lag in [1, 7, 14, 28]:
+        df[f"lag_{lag}"] = df.groupby(["sku_id", "store_id"])["units_sold"].shift(lag)
+
+    g = df.groupby(["sku_id", "store_id"])["units_sold"]
+    df["roll7_mean"]  = g.transform(lambda s: s.shift(1).rolling(7).mean())
+    df["roll14_mean"] = g.transform(lambda s: s.shift(1).rolling(14).mean())
+    df["roll14_std"]  = g.transform(lambda s: s.shift(1).rolling(14).std())
+
+    return df
+
+def safety_stock(z, demand_std, lead_time_days):
+    return float(z) * float(demand_std) * float(np.sqrt(max(1.0, float(lead_time_days))))
+
+def reorder_point(mean_demand, lead_time_days, safety_stock_units):
+    return float(mean_demand) * float(lead_time_days) + float(safety_stock_units)
+
+def holding_cost_per_unit_per_day(unit_cost, annual_hold_pct):
+    return float(unit_cost) * (float(annual_hold_pct) / 365.0)
+
+def stockout_penalty_per_unit(unit_margin, penalty_factor):
+    return float(unit_margin) * float(penalty_factor)
+
+def economic_impact(order_qty, unit_cost, annual_hold_pct, unit_margin, penalty_factor, stockout_units_avoided):
+    # 14-day holding proxy (simple, explainable)
+    hold_cost = float(order_qty) * holding_cost_per_unit_per_day(unit_cost, annual_hold_pct) * 14.0
+    stockout_benefit = float(stockout_units_avoided) * stockout_penalty_per_unit(unit_margin, penalty_factor)
+    working_capital = float(order_qty) * float(unit_cost)
+    net_value = stockout_benefit - hold_cost
+    return hold_cost, stockout_benefit, working_capital, net_value
+
+
+# ============================================================
 # App Layout — Tabs
 # ============================================================
 st.title("AI Portfolio — Decision Support Agents")
 st.caption("Select a project tab below.")
 
-tab_esg, tab_health = st.tabs([
+tab_esg, tab_health, tab_retail = st.tabs([
     "🌱 ESG Energy & Emissions Optimization Agent",
-    "🏥 Healthcare Patient-Flow Optimization Agent"
+    "🏥 Healthcare Patient-Flow Optimization Agent",
+    "🛒 Retail Inventory Optimization Agent",
 ])
 
 
@@ -469,7 +570,7 @@ with tab_health:
             "Healthcare RAG is not ready.\n\n"
             "Fix checklist:\n"
             "1) Add OPENAI_API_KEY in Streamlit Secrets\n"
-            "2) Ensure healthcare_rag_project_artifacts/vector_store exists in this repo"
+            "2) Ensure healthcare_rag_artifacts/vector_store exists in this repo"
         )
     else:
         health_vectordb = load_health_vectordb(HEALTH_RAG_DB_DIR)
@@ -513,4 +614,135 @@ with tab_health:
     st.caption(
         "Governance note: This is operational decision support for screening/prioritization. "
         "It does not provide medical advice, staffing schedules, or clinical decisions."
+    )
+
+
+# ============================================================
+# TAB 3 — Retail Inventory Optimization (NEW)
+# ============================================================
+with tab_retail:
+    st.title("Retail Inventory Optimization Agent")
+    st.subheader("AI Decision-Support Tool for Weekly Replenishment & SKU Prioritisation")
+
+    st.caption(
+        "This tool forecasts next-day demand and translates it into reorder policies (safety stock, reorder point, order qty) "
+        "with a simple economic trade-off view (working capital vs holding cost vs stockout penalty proxy). "
+        "It is decision support, not automated purchasing."
+    )
+
+    # ---- Artifact presence check (friendly error)
+    missing_files = [f for f in RETAIL_REQUIRED_FILES if not (RETAIL_DIR / f).exists()]
+    if missing_files:
+        st.error(
+            "Retail artifacts not found in repo.\n\n"
+            "Create folder: retail_project_artifacts/ and upload:\n"
+            + "\n".join([f"- {x}" for x in missing_files])
+        )
+        st.stop()
+
+    # ---- Load
+    try:
+        demand_model, retail_meta = load_retail_model()
+        products, stores, suppliers, sales, inv = load_retail_data()
+    except Exception as e:
+        st.error(f"Failed to load Retail artifacts: {e}")
+        st.stop()
+
+    # ---- Build features
+    df = build_retail_feature_frame(products, suppliers, sales, inv)
+
+    # ---- Controls
+    min_date = df["date"].min().date()
+    max_date = df["date"].max().date()
+    default_date = (df["date"].max() - pd.Timedelta(days=7)).date()
+
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        decision_date = st.date_input("Decision date", value=default_date, min_value=min_date, max_value=max_date)
+    with c2:
+        service_level = st.slider("Service level target", 0.80, 0.99, 0.95, 0.01)
+    with c3:
+        lead_time_shock = st.slider("Lead time shock (+ days)", 0, 21, 0, 1)
+
+    snap = df[df["date"].dt.date == decision_date].copy()
+    if snap.empty:
+        st.warning("No data for the selected decision date.")
+        st.stop()
+
+    # ---- Predict demand
+    X_cols_num = retail_meta["features_num"]
+    X_cols_cat = retail_meta["features_cat"]  # should be ["category"]
+    X_pred = snap[X_cols_num + X_cols_cat].copy()
+
+    snap["pred_next_day_demand"] = np.clip(demand_model.predict(X_pred), 0, None)
+
+    # ---- Inventory policy
+    snap["lead_time_days"] = (snap["lead_time_mean_days"].fillna(7) + lead_time_shock).clip(lower=1)
+    snap["demand_std_proxy"] = snap["roll14_std"].fillna(snap["pred_next_day_demand"].clip(lower=1))
+
+    Z = float(norm.ppf(service_level))
+    snap["safety_stock"] = snap.apply(lambda r: safety_stock(Z, r["demand_std_proxy"], r["lead_time_days"]), axis=1)
+    snap["reorder_point"] = snap.apply(lambda r: reorder_point(r["pred_next_day_demand"], r["lead_time_days"], r["safety_stock"]), axis=1)
+
+    snap["inventory_position"] = snap["on_hand"].fillna(0) + snap["on_order_qty"].fillna(0)
+    snap["recommended_order_qty"] = np.ceil((snap["reorder_point"] - snap["inventory_position"]).clip(lower=0)).astype(int)
+
+    # ---- Economics (proxy)
+    snap["unit_margin"] = (snap["price"] - snap["unit_cost"]).clip(lower=0)
+    snap["pred_demand_over_lt"] = snap["pred_next_day_demand"] * snap["lead_time_days"]
+    snap["stockout_units_avoided_proxy"] = np.minimum(
+        snap["recommended_order_qty"],
+        np.ceil(snap["pred_demand_over_lt"]).astype(int)
+    )
+
+    econ = snap.apply(lambda r: economic_impact(
+        order_qty=r["recommended_order_qty"],
+        unit_cost=r["unit_cost"],
+        annual_hold_pct=r["annual_holding_cost_pct"],
+        unit_margin=r["unit_margin"],
+        penalty_factor=r["stockout_penalty_factor"],
+        stockout_units_avoided=r["stockout_units_avoided_proxy"]
+    ), axis=1)
+
+    econ_df = pd.DataFrame(econ.tolist(), columns=[
+        "hold_cost_proxy",
+        "stockout_benefit_proxy",
+        "working_capital_required",
+        "net_value_proxy"
+    ])
+    snap = pd.concat([snap.reset_index(drop=True), econ_df.reset_index(drop=True)], axis=1)
+
+    # ---- Action list
+    action = snap[snap["recommended_order_qty"] > 0].copy()
+    action = action.sort_values(["net_value_proxy", "stockout_benefit_proxy"], ascending=False)
+
+    k1, k2, k3 = st.columns(3)
+    k1.metric("Recommended actions", int(action.shape[0]))
+    k2.metric("Working capital required (proxy)", f"${action['working_capital_required'].sum():,.0f}")
+    k3.metric("Net value (proxy)", f"${action['net_value_proxy'].sum():,.0f}")
+
+    st.subheader("📋 Action List (ranked)")
+    st.dataframe(
+        action[[
+            "sku_id", "store_id", "category",
+            "on_hand", "on_order_qty", "inventory_position",
+            "pred_next_day_demand", "lead_time_days",
+            "safety_stock", "reorder_point",
+            "recommended_order_qty",
+            "hold_cost_proxy", "stockout_benefit_proxy",
+            "working_capital_required", "net_value_proxy"
+        ]],
+        use_container_width=True,
+        height=560
+    )
+
+    st.download_button(
+        "⬇️ Download action list CSV",
+        data=action.to_csv(index=False).encode("utf-8"),
+        file_name=f"retail_action_list_{decision_date}.csv",
+        mime="text/csv"
+    )
+
+    st.caption(
+        "Governance note: Recommendations are decision support. For high-value or high-capital orders, require buyer review and supplier confirmation."
     )
