@@ -507,6 +507,22 @@ with tab_fin:
         days_past_due = 0
 
         if st.button("Run Financial Decision", type="primary"):
+            # -----------------------------
+            # FIX: add lgd + ead as features BEFORE predict_proba()
+            # -----------------------------
+
+            # Compute LGD/EAD first (so the model receives the same columns it was trained on)
+            lgd = float(np.clip(
+                0.60
+                + 0.05 * (1 if delinquencies_12m > 0 else 0)
+                + 0.08 * revolving_utilization
+                - 0.03 * (1 if residence_type == "Own" else 0)
+                - 0.02 * (1 if residence_type == "Mortgage" else 0)
+                + 0.03 * (1 if employment_status == "Unemployed" else 0),
+                0.30, 0.90
+            ))
+            ead = float(current_balance)
+            
             row = pd.DataFrame([{
                 "loan_id": 0,
                 "age": int(age),
@@ -515,34 +531,39 @@ with tab_fin:
                 "annual_income": float(annual_income),
                 "residence_type": str(residence_type),
                 "dependents": int(dependents),
-
+            
                 "credit_score": int(credit_score),
                 "delinquencies_12m": int(delinquencies_12m),
                 "inquiries_6m": int(inquiries_6m),
                 "revolving_utilization": float(revolving_utilization),
                 "total_open_accounts": int(total_open_accounts),
                 "months_since_last_delinquency": int(months_since_last_delinquency),
-
+            
                 "loan_amount": float(loan_amount),
                 "term_months": int(term_months),
                 "interest_rate": float(interest_rate),
                 "installment_amount": float(installment_amount),
                 "purpose": str(purpose),
-
+            
                 "months_on_book": int(months_on_book),
                 "current_balance": float(current_balance),
                 "missed_payments_3m": int(missed_payments_3m),
                 "days_past_due": int(days_past_due),
                 "payment_to_income_ratio": float(payment_to_income_ratio),
-
+            
                 "unemployment_rate": float(unemployment_rate),
                 "inflation_rate": float(inflation_rate),
                 "cash_rate_proxy": float(cash_rate_proxy),
                 "region": str(region),
                 "region_risk_index": float(region_risk_index),
+            
+                # ✅ THESE TWO MUST EXIST because the model was trained with them
+                "lgd": lgd,
+                "ead": ead,
             }])
 
             pd_hat = float(fin_model.predict_proba(row)[:, 1][0])
+
 
             # LGD approximation (same as Colab)
             lgd = float(np.clip(
