@@ -826,7 +826,7 @@ with tab_retail:
     )
 
 
-        st.divider()
+    st.divider()
 
     # -----------------------------
     # Retail RAG Assistant (NEW)
