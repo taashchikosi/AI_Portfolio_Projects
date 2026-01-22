@@ -412,37 +412,10 @@ with tab_fin:
         return float(np.clip(req, 0.05, 0.35))
 
     # --- Tabs inside financial section
-    fin_tab1, fin_tab2 = st.tabs(["📊 Portfolio Overview", "🧮 Decision Simulator"])
+    fin_tab1, fin_tab2 = st.tabs(["🧮 Decision Simulator","📊 Portfolio Overview"])
+
 
     with fin_tab1:
-        st.markdown("### Portfolio Overview")
-        if fin_decisions is None:
-            st.warning(
-                "Optional file missing: loan_decisions_with_reasons_actions_v3.csv. "
-                "Upload it for full decision mix + explainability browsing."
-            )
-            st.dataframe(fin_data.head(30), use_container_width=True)
-        else:
-            c1, c2, c3, c4 = st.columns(4)
-            c1.metric("Loans", f"{len(fin_decisions):,}")
-            c2.metric("Avg PD", f"{fin_decisions['pd_model'].mean():.2%}")
-            c3.metric("Total ECL", f"${fin_decisions['ecl_model'].sum():,.0f}")
-            c4.metric("Decline Rate", f"{(fin_decisions['decision'].eq('DECLINE').mean()):.2%}")
-
-            mix = fin_decisions["decision"].value_counts().rename_axis("decision").reset_index(name="count")
-            mix["share"] = mix["count"] / mix["count"].sum()
-            st.dataframe(mix, use_container_width=True)
-
-            st.markdown("#### Sample loans (with reason codes + actions)")
-            show_cols = [
-                "loan_id","pd_model","ecl_model","expected_profit","decision",
-                "reason_1","severity_1","reason_2","severity_2",
-                "action_1","action_2"
-            ]
-            existing = [c for c in show_cols if c in fin_decisions.columns]
-            st.dataframe(fin_decisions[existing].head(30), use_container_width=True)
-
-    with fin_tab2:
         st.markdown("### Decision Simulator")
         st.caption("Adjust inputs and run PD → ECL → Decision, plus pricing suggestion when applicable.")
 
@@ -677,3 +650,32 @@ with tab_fin:
         "Setup note: ensure you’ve committed the financial_risk_agent folder (data + models). "
         "If you want evidence-backed Q&A, we’ll add the Phase 8 RAG layer next."
     )
+
+
+    with fin_tab2:
+        st.markdown("### Portfolio Overview")
+        if fin_decisions is None:
+            st.warning(
+                "Optional file missing: loan_decisions_with_reasons_actions_v3.csv. "
+                "Upload it for full decision mix + explainability browsing."
+            )
+            st.dataframe(fin_data.head(30), use_container_width=True)
+        else:
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("Loans", f"{len(fin_decisions):,}")
+            c2.metric("Avg PD", f"{fin_decisions['pd_model'].mean():.2%}")
+            c3.metric("Total ECL", f"${fin_decisions['ecl_model'].sum():,.0f}")
+            c4.metric("Decline Rate", f"{(fin_decisions['decision'].eq('DECLINE').mean()):.2%}")
+
+            mix = fin_decisions["decision"].value_counts().rename_axis("decision").reset_index(name="count")
+            mix["share"] = mix["count"] / mix["count"].sum()
+            st.dataframe(mix, use_container_width=True)
+
+            st.markdown("#### Sample loans (with reason codes + actions)")
+            show_cols = [
+                "loan_id","pd_model","ecl_model","expected_profit","decision",
+                "reason_1","severity_1","reason_2","severity_2",
+                "action_1","action_2"
+            ]
+            existing = [c for c in show_cols if c in fin_decisions.columns]
+            st.dataframe(fin_decisions[existing].head(30), use_container_width=True)
