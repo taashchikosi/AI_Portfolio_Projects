@@ -868,26 +868,26 @@ with tab_retail:
             )
 
     st.markdown("## 📄 Full Consulting Report - Decision-Grade AI System for Weekly Replenishment & Working-Capital Prioritization")
-    health_pdf_file = "Healthcare_Patient_Flow_Optimization_Agent.pdf"
+    retail_pdf_file = "Retail_Inventory_Optimization_Agent.pdf"
     try:
-        with open(health_pdf_file, "rb") as f:
+        with open(retail_pdf_file, "rb") as f:
             pdf_bytes = f.read()
 
         st.download_button(
             label="⬇️ Download Report (PDF)",
             data=pdf_bytes,
-            file_name=health_pdf_file,
+            file_name=retail_pdf_file,
             mime="application/pdf",
         )
     except FileNotFoundError:
         st.info(
-            f"PDF not found: {health_pdf_file}\n\n"
+            f"PDF not found: {retail_pdf_file}\n\n"
             "When you generate it at the end, upload it to the repo root (same folder as app.py)."
         )
 
     st.caption(
-        "Governance note: This is operational decision support for screening/prioritization. "
-        "It does not provide medical advice, staffing schedules, or clinical decisions."
+        "Governance note: This is decision support for replenishment screening/prioritization. "
+        "It does not automate purchasing decisions; high-capital or high-uncertainty actions require buyer review."
     )
 
         
