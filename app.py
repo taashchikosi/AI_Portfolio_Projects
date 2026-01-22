@@ -867,3 +867,28 @@ with tab_retail:
                 "5) What human review triggers should I apply for high-risk orders?\n"
             )
 
+    st.markdown("## 📄 Full Consulting Report - Decision-Grade AI System for Weekly Replenishment & Working-Capital Prioritization")
+    health_pdf_file = "Healthcare_Patient_Flow_Optimization_Agent.pdf"
+    try:
+        with open(health_pdf_file, "rb") as f:
+            pdf_bytes = f.read()
+
+        st.download_button(
+            label="⬇️ Download Report (PDF)",
+            data=pdf_bytes,
+            file_name=health_pdf_file,
+            mime="application/pdf",
+        )
+    except FileNotFoundError:
+        st.info(
+            f"PDF not found: {health_pdf_file}\n\n"
+            "When you generate it at the end, upload it to the repo root (same folder as app.py)."
+        )
+
+    st.caption(
+        "Governance note: This is operational decision support for screening/prioritization. "
+        "It does not provide medical advice, staffing schedules, or clinical decisions."
+    )
+
+        
+
