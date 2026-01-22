@@ -168,6 +168,48 @@ def health_rag_answer(vectordb, question: str, k: int = 5) -> str:
 
 
 # ============================================================
+# Retail — RAG Setup (NEW)
+# ============================================================
+RETAIL_RAG_DB_DIR = BASE_DIR / "retail_rag_artifacts" / "vector_store"
+
+@st.cache_resource
+def load_retail_vectordb(persist_dir: Path):
+    embeddings = OpenAIEmbeddings()
+    return Chroma(persist_directory=str(persist_dir), embedding_function=embeddings)
+
+RETAIL_SYSTEM_PROMPT = """
+You are a retail inventory decision-support assistant.
+
+Rules (must follow):
+- Use ONLY the provided CONTEXT for factual claims.
+- Do NOT invent inventory policies, financial figures, supplier rules, or domain facts not present in CONTEXT.
+- Treat ALL economic outputs as directional proxies unless CONTEXT explicitly states otherwise.
+- If CONTEXT is insufficient, say so and ask a specific follow-up question.
+- Always include citations to the retrieved sources.
+
+Return format:
+1) Answer
+2) Why
+3) Evidence (bullets with source + chunk)
+4) Confidence (High/Medium/Low)
+5) Human Review Trigger (Yes/No + reason)
+"""
+
+def retail_rag_answer(vectordb, question: str, k: int = 5) -> str:
+    hits = vectordb.similarity_search(question, k=k)
+    context = "\n\n".join(
+        f"[SOURCE: {h.metadata.get('source')} | CHUNK: {h.metadata.get('chunk')}]\n{h.page_content}"
+        for h in hits
+    )
+    prompt = f"QUESTION:\n{question}\n\nCONTEXT:\n{context}"
+    llm = load_llm()
+    return llm.invoke([
+        {"role": "system", "content": RETAIL_SYSTEM_PROMPT},
+        {"role": "user", "content": prompt}
+    ]).content
+
+
+# ============================================================
 # Healthcare — Scenario → Feature Builder (Streamlit-ready)
 # ============================================================
 ARRIVAL_PRESSURE_MAP = {"Low": 0.75, "Normal": 1.00, "High": 1.35}
@@ -782,3 +824,46 @@ with tab_retail:
     st.caption(
         "Governance note: Recommendations are decision support. For high-value or high-capital orders, require buyer review and supplier confirmation."
     )
+
+
+        st.divider()
+
+    # -----------------------------
+    # Retail RAG Assistant (NEW)
+    # -----------------------------
+    st.header("🧠 Decision Rationale & Evidence Assistant")
+    st.caption("Ask about rationale, assumptions, limitations, governance, and safe use. Answers are evidence-grounded from the Retail KB.")
+
+    RETAIL_RAG_READY = bool(os.environ.get("OPENAI_API_KEY")) and RETAIL_RAG_DB_DIR.exists()
+
+    if not RETAIL_RAG_READY:
+        st.warning(
+            "Retail RAG is not ready.\n\n"
+            "Fix checklist:\n"
+            "1) Add OPENAI_API_KEY in Streamlit Secrets\n"
+            "2) Ensure retail_rag_artifacts/vector_store exists in this repo"
+        )
+    else:
+        retail_vectordb = load_retail_vectordb(RETAIL_RAG_DB_DIR)
+        qr = st.text_input(
+            "Ask a question",
+            key="retail_q",
+            placeholder="e.g., Why is this SKU recommended? When should I escalate to buyer review?"
+        )
+        askr = st.button("Ask", key="retail_ask")
+
+        if askr and qr.strip():
+            with st.spinner("Retrieving evidence and generating answer..."):
+                ans = retail_rag_answer(retail_vectordb, qr.strip())
+            st.markdown("### Response")
+            st.write(ans)
+
+        with st.expander("Suggested demo questions"):
+            st.write(
+                "1) What does service level mean and how does it affect safety stock?\n"
+                "2) How should I interpret net value proxy vs working capital required?\n"
+                "3) When should I override a recommendation?\n"
+                "4) What are the known failure modes (promos, stockouts, new SKUs)?\n"
+                "5) What human review triggers should I apply for high-risk orders?\n"
+            )
+
