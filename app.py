@@ -1,5 +1,6 @@
-# app.py — FULL COPY/PASTE (ESG + Healthcare + Retail tab)
-# Source base: your uploaded "app ESG & Healthcare.py" :contentReference[oaicite:0]{index=0}
+# app.py — FULL COPY/PASTE (ESG + Healthcare + Retail + Financial)
+# Base: your uploaded working 3-project app.py (kept unchanged except adding a 4th tab)
+# -----------------------------------------------------------------------------------
 
 import os
 import json
@@ -390,14 +391,16 @@ def economic_impact(order_qty, unit_cost, annual_hold_pct, unit_margin, penalty_
 
 # ============================================================
 # App Layout — Tabs
+# (ONLY CHANGE to your original working app: add a 4th tab)
 # ============================================================
 st.title("AI Portfolio — Decision Support Agents")
 st.caption("Select a project tab below.")
 
-tab_esg, tab_health, tab_retail = st.tabs([
+tab_esg, tab_health, tab_retail, tab_fin = st.tabs([
     "🌱 ESG Energy & Emissions Optimization Agent",
     "🏥 Healthcare Patient-Flow Optimization Agent",
     "🛒 Retail Inventory Optimization Agent",
+    "💳 Financial Credit Default Risk Agent",
 ])
 
 
@@ -890,5 +893,349 @@ with tab_retail:
         "It does not automate purchasing decisions; high-capital or high-uncertainty actions require buyer review."
     )
 
-        
 
+
+# ============================================================
+# TAB 4 — Financial Credit Default Risk Agent (ADDED ONLY)
+# ============================================================
+with tab_fin:
+    st.title("Financial Credit Default Risk Agent")
+    st.subheader("PD → ECL → Decision + Reason Codes + Next Actions")
+
+    st.caption(
+        "This tool predicts 12-month probability of default (PD) for consumer loans, translates risk into "
+        "expected credit loss (ECL), and recommends an action (approve / reprice / manual review / decline) "
+        "with bank-style reason codes and next actions."
+    )
+
+    FIN_DIR = BASE_DIR / "financial_risk_agent"
+    FIN_MODEL_PATH = FIN_DIR / "models" / "pd_model_CHAMPION.joblib"
+    FIN_DATA_PATH = FIN_DIR / "data" / "consumer_loans_synthetic_v1.csv"
+    FIN_DECISIONS_PATH = FIN_DIR / "data" / "loan_decisions_with_reasons_actions_v3.csv"  # optional
+
+    # ---- Safe loaders (do NOT kill the whole portfolio if missing)
+    @st.cache_resource
+    def load_fin_model():
+        return joblib.load(FIN_MODEL_PATH)
+
+    @st.cache_data
+    def load_fin_data():
+        return pd.read_csv(FIN_DATA_PATH)
+
+    @st.cache_data
+    def load_fin_decisions():
+        if FIN_DECISIONS_PATH.exists():
+            return pd.read_csv(FIN_DECISIONS_PATH)
+        return None
+
+    # ---- Presence checks (only affect this tab)
+    missing = []
+    if not FIN_DIR.exists():
+        missing.append("financial_risk_agent/ folder")
+    if not FIN_MODEL_PATH.exists():
+        missing.append("financial_risk_agent/models/pd_model_CHAMPION.joblib")
+    if not FIN_DATA_PATH.exists():
+        missing.append("financial_risk_agent/data/consumer_loans_synthetic_v1.csv")
+
+    if missing:
+        st.error("Financial project files are missing (this does NOT affect your other tabs).")
+        st.write("Missing:")
+        for m in missing:
+            st.write(f"- {m}")
+        st.info(
+            "Fix the folder structure like this:\n\n"
+            "financial_risk_agent/\n"
+            "  models/\n"
+            "    pd_model_CHAMPION.joblib\n"
+            "  data/\n"
+            "    consumer_loans_synthetic_v1.csv\n"
+            "    loan_decisions_with_reasons_actions_v3.csv   (optional)\n"
+        )
+    else:
+        # Load
+        try:
+            fin_model = load_fin_model()
+            fin_data = load_fin_data()
+            fin_decisions = load_fin_decisions()
+        except Exception as e:
+            st.error(f"Financial tab failed to load artifacts: {e}")
+            st.stop()
+
+        # Policy thresholds
+        PD_APPROVE_MAX = 0.03
+        PD_REPRICE_MAX = 0.08
+        PD_REVIEW_MAX  = 0.15
+
+        def fin_decision_bucket(pd_val: float) -> str:
+            if pd_val < PD_APPROVE_MAX:
+                return "APPROVE"
+            if pd_val < PD_REPRICE_MAX:
+                return "APPROVE_REPRICE"
+            if pd_val < PD_REVIEW_MAX:
+                return "MANUAL_REVIEW"
+            return "DECLINE"
+
+        def fin_calc_interest_income(loan_amount, interest_rate, term_months, avg_balance_factor=0.5):
+            term_years = float(term_months) / 12.0
+            return float(loan_amount) * float(interest_rate) * term_years * avg_balance_factor
+
+        def fin_calc_required_rate(loan_amount, term_months, ecl, operating_cost=150.0, target_profit_pct=0.02, avg_balance_factor=0.5):
+            term_years = float(term_months) / 12.0
+            denom = max(float(loan_amount) * term_years * avg_balance_factor, 1.0)
+            target_profit = target_profit_pct * float(loan_amount)
+            req = (target_profit + float(ecl) + float(operating_cost)) / denom
+            return float(np.clip(req, 0.05, 0.35))
+
+        fin_tab1, fin_tab2 = st.tabs(["📊 Portfolio Overview", "🧮 Decision Simulator"])
+
+        # -----------------------------
+        # Portfolio Overview
+        # -----------------------------
+        with fin_tab1:
+            st.markdown("### Portfolio Overview")
+
+            if fin_decisions is None:
+                st.warning("Optional file missing: loan_decisions_with_reasons_actions_v3.csv (showing raw data sample).")
+                st.dataframe(fin_data.head(30), use_container_width=True)
+            else:
+                c1, c2, c3, c4 = st.columns(4)
+                c1.metric("Loans", f"{len(fin_decisions):,}")
+                c2.metric("Avg PD", f"{fin_decisions['pd_model'].mean():.2%}")
+                c3.metric("Total ECL", f"${fin_decisions['ecl_model'].sum():,.0f}")
+                c4.metric("Decline Rate", f"{(fin_decisions['decision'].eq('DECLINE').mean()):.2%}")
+
+                mix = fin_decisions["decision"].value_counts().rename_axis("decision").reset_index(name="count")
+                mix["share"] = mix["count"] / mix["count"].sum()
+                st.dataframe(mix, use_container_width=True)
+
+                st.markdown("#### Sample loans")
+                st.dataframe(fin_decisions.head(30), use_container_width=True)
+
+        # -----------------------------
+        # Decision Simulator
+        # -----------------------------
+        with fin_tab2:
+            st.markdown("### Decision Simulator")
+            st.caption("Adjust inputs and run PD → ECL → Decision. If your model expects LGD/EAD as features, we provide them.")
+
+            d = fin_data
+
+            default_region = d["region"].mode()[0]
+            default_emp = d["employment_status"].mode()[0]
+            default_res = d["residence_type"].mode()[0]
+            default_purpose = d["purpose"].mode()[0]
+            region_risk_map = {"Inner Metro": 0.95, "Outer Metro": 1.00, "Regional": 1.08, "Remote": 1.18}
+
+            cA, cB, cC = st.columns(3)
+
+            with cA:
+                age = st.number_input("Age", 18, 75, int(d["age"].median()))
+                employment_status = st.selectbox(
+                    "Employment status",
+                    sorted(d["employment_status"].unique().tolist()),
+                    index=sorted(d["employment_status"].unique().tolist()).index(default_emp)
+                )
+                annual_income = st.number_input("Annual income", 18000, 250000, int(d["annual_income"].median()), step=1000)
+                residence_type = st.selectbox(
+                    "Residence type",
+                    sorted(d["residence_type"].unique().tolist()),
+                    index=sorted(d["residence_type"].unique().tolist()).index(default_res)
+                )
+                dependents = st.number_input("Dependents", 0, 5, int(d["dependents"].median()))
+                tenure_months = st.number_input("Tenure (months)", 0, 240, int(d["tenure_months"].median()))
+
+            with cB:
+                credit_score = st.number_input("Credit score", 300, 850, int(d["credit_score"].median()))
+                delinquencies_12m = st.number_input("Delinquencies (12m)", 0, 6, int(d["delinquencies_12m"].median()))
+                inquiries_6m = st.number_input("Inquiries (6m)", 0, 10, int(d["inquiries_6m"].median()))
+                revolving_utilization = st.slider("Revolving utilization", 0.0, 1.0, float(d["revolving_utilization"].median()), 0.01)
+                total_open_accounts = st.number_input("Total open accounts", 1, 25, int(d["total_open_accounts"].median()))
+                months_since_last_delinquency = st.number_input("Months since last delinquency", 0, 120, int(d["months_since_last_delinquency"].median()))
+
+            with cC:
+                loan_amount = st.number_input("Loan amount", 2000, 60000, int(d["loan_amount"].median()), step=500)
+                term_months = st.selectbox(
+                    "Term (months)",
+                    sorted(d["term_months"].unique().tolist()),
+                    index=sorted(d["term_months"].unique().tolist()).index(int(d["term_months"].median()))
+                )
+                interest_rate = st.slider("Offered interest rate", 0.05, 0.29, float(d["interest_rate"].median()), 0.005)
+                purpose = st.selectbox(
+                    "Loan purpose",
+                    sorted(d["purpose"].unique().tolist()),
+                    index=sorted(d["purpose"].unique().tolist()).index(default_purpose)
+                )
+
+                r_m = float(interest_rate) / 12.0
+                n = int(term_months)
+                installment_amount = float((loan_amount * r_m) / (1 - (1 + r_m) ** (-n))) if r_m > 0 else float(loan_amount / max(n, 1))
+                monthly_income = float(annual_income) / 12.0
+                payment_to_income_ratio = float(installment_amount / max(monthly_income, 1.0))
+
+                st.write(f"Estimated installment: **${installment_amount:,.2f}** / month")
+                st.write(f"Payment-to-income ratio (PTI): **{payment_to_income_ratio:.2f}**")
+
+                unemployment_rate = st.slider("Unemployment rate", 3.0, 9.0, float(d["unemployment_rate"].median()), 0.1)
+                inflation_rate = st.slider("Inflation rate", 2.0, 8.0, float(d["inflation_rate"].median()), 0.1)
+                cash_rate_proxy = st.slider("Cash rate proxy", 3.0, 7.0, float(d["cash_rate_proxy"].median()), 0.1)
+
+                region = st.selectbox(
+                    "Region",
+                    sorted(d["region"].unique().tolist()),
+                    index=sorted(d["region"].unique().tolist()).index(default_region)
+                )
+                region_risk_index = float(region_risk_map.get(region, 1.0))
+
+            # Origination scenario placeholders
+            months_on_book = 0
+            current_balance = float(loan_amount)
+            missed_payments_3m = 0
+            days_past_due = 0
+
+            if st.button("Run Financial Decision", type="primary"):
+                # --- LGD/EAD (also passed into model features to prevent "missing columns" crashes)
+                lgd = float(np.clip(
+                    0.60
+                    + 0.05 * (1 if delinquencies_12m > 0 else 0)
+                    + 0.08 * revolving_utilization
+                    - 0.03 * (1 if residence_type == "Own" else 0)
+                    - 0.02 * (1 if residence_type == "Mortgage" else 0)
+                    + 0.03 * (1 if employment_status == "Unemployed" else 0),
+                    0.30, 0.90
+                ))
+                ead = float(current_balance)
+
+                row = pd.DataFrame([{
+                    "loan_id": 0,
+                    "age": int(age),
+                    "employment_status": str(employment_status),
+                    "tenure_months": int(tenure_months),
+                    "annual_income": float(annual_income),
+                    "residence_type": str(residence_type),
+                    "dependents": int(dependents),
+
+                    "credit_score": int(credit_score),
+                    "delinquencies_12m": int(delinquencies_12m),
+                    "inquiries_6m": int(inquiries_6m),
+                    "revolving_utilization": float(revolving_utilization),
+                    "total_open_accounts": int(total_open_accounts),
+                    "months_since_last_delinquency": int(months_since_last_delinquency),
+
+                    "loan_amount": float(loan_amount),
+                    "term_months": int(term_months),
+                    "interest_rate": float(interest_rate),
+                    "installment_amount": float(installment_amount),
+                    "purpose": str(purpose),
+
+                    "months_on_book": int(months_on_book),
+                    "current_balance": float(current_balance),
+                    "missed_payments_3m": int(missed_payments_3m),
+                    "days_past_due": int(days_past_due),
+                    "payment_to_income_ratio": float(payment_to_income_ratio),
+
+                    "unemployment_rate": float(unemployment_rate),
+                    "inflation_rate": float(inflation_rate),
+                    "cash_rate_proxy": float(cash_rate_proxy),
+                    "region": str(region),
+                    "region_risk_index": float(region_risk_index),
+
+                    # critical for schema alignment if your champion was trained with these
+                    "lgd": lgd,
+                    "ead": ead,
+                }])
+
+                pd_hat = float(fin_model.predict_proba(row)[:, 1][0])
+                ecl = float(pd_hat * lgd * ead)
+
+                interest_income = fin_calc_interest_income(loan_amount, interest_rate, term_months)
+                operating_cost = 150.0
+                expected_profit = float(interest_income - ecl - operating_cost)
+
+                decision = fin_decision_bucket(pd_hat)
+                req_rate = fin_calc_required_rate(loan_amount, term_months, ecl, operating_cost=operating_cost)
+                recommended_rate = float(max(interest_rate, req_rate)) if decision == "APPROVE_REPRICE" else float(interest_rate)
+
+                st.markdown("## Decision Card")
+                k1, k2, k3, k4 = st.columns(4)
+                k1.metric("Predicted PD", f"{pd_hat:.2%}")
+                k2.metric("ECL (PD×LGD×EAD)", f"${ecl:,.0f}")
+                k3.metric("Expected Profit (proxy)", f"${expected_profit:,.0f}")
+                k4.metric("Decision", decision)
+
+                if decision == "APPROVE_REPRICE":
+                    st.info(f"Recommended rate (proxy): **{recommended_rate:.2%}** (current: {interest_rate:.2%})")
+
+                # Lightweight rule-based reason codes + severity (bank-style)
+                reasons = []
+                if credit_score <= 580:
+                    reasons.append(("Very low credit score", 5, f"credit_score={credit_score}"))
+                elif credit_score <= 640:
+                    reasons.append(("Low credit score", 4, f"credit_score={credit_score}"))
+
+                if payment_to_income_ratio >= 0.45:
+                    reasons.append(("Very high payment-to-income (affordability stress)", 5, f"PTI={payment_to_income_ratio:.2f}"))
+                elif payment_to_income_ratio >= 0.35:
+                    reasons.append(("High payment-to-income (affordability stress)", 4, f"PTI={payment_to_income_ratio:.2f}"))
+
+                if revolving_utilization >= 0.80:
+                    reasons.append(("Very high revolving utilization", 5, f"utilization={revolving_utilization:.2f}"))
+                elif revolving_utilization >= 0.60:
+                    reasons.append(("High revolving utilization", 4, f"utilization={revolving_utilization:.2f}"))
+
+                if delinquencies_12m >= 2:
+                    reasons.append(("Multiple delinquencies in last 12 months", 5, f"delinq_12m={delinquencies_12m}"))
+                elif delinquencies_12m >= 1:
+                    reasons.append(("Recent delinquency in last 12 months", 4, f"delinq_12m={delinquencies_12m}"))
+
+                if inquiries_6m >= 7:
+                    reasons.append(("Very high recent credit inquiries", 4, f"inquiries_6m={inquiries_6m}"))
+                elif inquiries_6m >= 4:
+                    reasons.append(("High recent credit inquiries", 3, f"inquiries_6m={inquiries_6m}"))
+
+                if employment_status == "Unemployed":
+                    reasons.append(("Unemployed (high income stability risk)", 5, "employment=Unemployed"))
+                elif employment_status in ["Student", "Self-employed"]:
+                    reasons.append(("Income volatility risk (student/self-employed)", 3, f"employment={employment_status}"))
+
+                macro_score = 0
+                if unemployment_rate >= 8.0: macro_score += 2
+                elif unemployment_rate >= 6.5: macro_score += 1
+                if inflation_rate >= 7.0: macro_score += 2
+                elif inflation_rate >= 5.5: macro_score += 1
+                if macro_score >= 3:
+                    reasons.append(("Macro environment under high stress (unemployment/inflation)", 4, f"unemp={unemployment_rate:.1f} infl={inflation_rate:.1f}"))
+                elif macro_score >= 2:
+                    reasons.append(("Macro environment stressed (unemployment/inflation)", 3, f"unemp={unemployment_rate:.1f} infl={inflation_rate:.1f}"))
+
+                if not reasons:
+                    reasons = [("No major risk flags triggered (combined moderate factors)", 1, "—")]
+
+                reasons = sorted(reasons, key=lambda x: x[1], reverse=True)[:4]
+
+                st.markdown("### Top Reason Codes (with severity)")
+                for r, s, d_ in reasons:
+                    st.write(f"- **{r}** | severity **{s}/5** | _{d_}_")
+
+                st.markdown("### Next Best Actions")
+                if decision == "APPROVE":
+                    actions = ["Auto-approve under standard terms", "Monitor early payment performance (first 60 days)"]
+                elif decision == "APPROVE_REPRICE":
+                    actions = [
+                        "Approve with risk-based pricing (increase rate to target margin)",
+                        "Offer shorter term or smaller principal to reduce PTI"
+                    ]
+                elif decision == "MANUAL_REVIEW":
+                    actions = [
+                        "Route to manual credit review",
+                        "Request supporting documents (payslips/bank statements)",
+                        "Counter-offer: reduce amount or require co-applicant/guarantor"
+                    ]
+                else:
+                    actions = [
+                        "Decline under automated policy",
+                        "Offer alternative: secured product or smaller amount after seasoning period",
+                        "Provide adverse action notice + path to eligibility"
+                    ]
+
+                for i, a in enumerate(actions[:3], start=1):
+                    st.write(f"{i}. {a}")
