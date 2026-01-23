@@ -986,35 +986,12 @@ with tab_fin:
             req = (target_profit + float(ecl) + float(operating_cost)) / denom
             return float(np.clip(req, 0.05, 0.35))
 
-        fin_tab1, fin_tab2 = st.tabs(["📊 Portfolio Overview", "🧮 Decision Simulator"])
-
-        # -----------------------------
-        # Portfolio Overview
-        # -----------------------------
-        with fin_tab1:
-            st.markdown("### Portfolio Overview")
-
-            if fin_decisions is None:
-                st.warning("Optional file missing: loan_decisions_with_reasons_actions_v3.csv (showing raw data sample).")
-                st.dataframe(fin_data.head(30), use_container_width=True)
-            else:
-                c1, c2, c3, c4 = st.columns(4)
-                c1.metric("Loans", f"{len(fin_decisions):,}")
-                c2.metric("Avg PD", f"{fin_decisions['pd_model'].mean():.2%}")
-                c3.metric("Total ECL", f"${fin_decisions['ecl_model'].sum():,.0f}")
-                c4.metric("Decline Rate", f"{(fin_decisions['decision'].eq('DECLINE').mean()):.2%}")
-
-                mix = fin_decisions["decision"].value_counts().rename_axis("decision").reset_index(name="count")
-                mix["share"] = mix["count"] / mix["count"].sum()
-                st.dataframe(mix, use_container_width=True)
-
-                st.markdown("#### Sample loans")
-                st.dataframe(fin_decisions.head(30), use_container_width=True)
+        fin_tab1, fin_tab2 = st.tabs(["🧮 Decision Simulator","📊 Portfolio Overview"])
 
         # -----------------------------
         # Decision Simulator
         # -----------------------------
-        with fin_tab2:
+        with fin_tab1:
             st.markdown("### Decision Simulator")
             st.caption("Adjust inputs and run PD → ECL → Decision. If your model expects LGD/EAD as features, we provide them.")
 
@@ -1239,3 +1216,28 @@ with tab_fin:
 
                 for i, a in enumerate(actions[:3], start=1):
                     st.write(f"{i}. {a}")
+
+
+        # -----------------------------
+        # Portfolio Overview
+        # -----------------------------
+        with fin_tab2:
+            st.markdown("### Portfolio Overview")
+    
+            if fin_decisions is None:
+                st.warning("Optional file missing: loan_decisions_with_reasons_actions_v3.csv (showing raw data sample).")
+                st.dataframe(fin_data.head(30), use_container_width=True)
+            else:
+                c1, c2, c3, c4 = st.columns(4)
+                c1.metric("Loans", f"{len(fin_decisions):,}")
+                c2.metric("Avg PD", f"{fin_decisions['pd_model'].mean():.2%}")
+                c3.metric("Total ECL", f"${fin_decisions['ecl_model'].sum():,.0f}")
+                c4.metric("Decline Rate", f"{(fin_decisions['decision'].eq('DECLINE').mean()):.2%}")
+    
+                mix = fin_decisions["decision"].value_counts().rename_axis("decision").reset_index(name="count")
+                mix["share"] = mix["count"] / mix["count"].sum()
+                st.dataframe(mix, use_container_width=True)
+    
+                st.markdown("#### Sample loans")
+                st.dataframe(fin_decisions.head(30), use_container_width=True)
+    
