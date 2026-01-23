@@ -1217,7 +1217,7 @@ with tab_fin:
                 for i, a in enumerate(actions[:3], start=1):
                     st.write(f"{i}. {a}")
 
-
+        
         # -----------------------------
         # Portfolio Overview
         # -----------------------------
