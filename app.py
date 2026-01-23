@@ -1313,6 +1313,31 @@ with tab_fin:
                         "5) What are the main limitations of this demo system?\n"
                     )
 
+
+            st.markdown("---")
+            st.markdown("## 📄 Full Consulting Report - AI Decision-Support System for Consumer Loan Risk Screening ")
+            financial_pdf_file = "Financial_Credit_Default_Risk_Agent.pdf"
+            try:
+                with open(financial_pdf_file, "rb") as f:
+                    pdf_bytes = f.read()
+
+                st.download_button(
+                    label="⬇️ Download Report (PDF)",
+                    data=pdf_bytes,
+                    file_name=financial_pdf_file,
+                    mime="application/pdf",
+                )
+            except FileNotFoundError:
+                st.info(
+                    f"PDF not found: {financial_pdf_file}\n\n"
+                    "When you generate it at the end, upload it to the repo root (same folder as app.py)."
+                )
+        
+            st.caption(
+                "Governance note: This system provides decision support for credit risk screening "
+                "and prioritization. It does not automate lending decisions, pricing approval, "
+                "or regulatory determinations."
+            )
         
         # -----------------------------
         # Portfolio Overview
