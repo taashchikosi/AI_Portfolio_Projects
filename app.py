@@ -209,6 +209,52 @@ def retail_rag_answer(vectordb, question: str, k: int = 5) -> str:
         {"role": "user", "content": prompt}
     ]).content
 
+# ============================================================
+# Financial — RAG Setup (Chroma persist dir)
+# ============================================================
+FIN_RAG_DB_DIR = BASE_DIR / "financial_risk_agent" / "rag_artifacts" / "vector_store"
+
+@st.cache_resource
+def load_fin_vectordb(persist_dir: Path):
+    embeddings = OpenAIEmbeddings()
+    return Chroma(persist_directory=str(persist_dir), embedding_function=embeddings)
+
+FIN_SYSTEM_PROMPT = """
+You are a credit risk decision-support assistant for consumer lending.
+
+Hard Rules (must follow):
+- Use ONLY the provided CONTEXT for factual claims.
+- Do NOT invent policy thresholds, model metrics, governance rules, or data facts.
+- If the CONTEXT is insufficient, say: "Not enough evidence in the KB to answer that." Then ask ONE targeted follow-up question.
+- Always cite evidence using the SOURCE filenames provided in the CONTEXT.
+- Treat outputs as decision support, not autonomous lending decisions.
+
+Return format (exact):
+1) Answer
+2) Why (brief reasoning)
+3) Evidence (bullet list; cite SOURCE filenames)
+4) Confidence (High/Medium/Low)
+5) Human Review Trigger (Yes/No + reason)
+"""
+
+def fin_rag_answer(vectordb, question: str, k: int = 5) -> str:
+    hits = vectordb.similarity_search(question, k=k)
+
+    # robust citations even if "chunk" metadata wasn't set at build time
+    context_parts = []
+    for i, h in enumerate(hits, start=1):
+        src = h.metadata.get("source", "kb_docs")
+        context_parts.append(f"[SOURCE: {src} | CHUNK: {i}]\n{h.page_content}")
+
+    context = "\n\n".join(context_parts)
+    prompt = f"QUESTION:\n{question}\n\nCONTEXT:\n{context}"
+
+    llm = load_llm()
+    return llm.invoke([
+        {"role": "system", "content": FIN_SYSTEM_PROMPT},
+        {"role": "user", "content": prompt}
+    ]).content
+
 
 # ============================================================
 # Healthcare — Scenario → Feature Builder (Streamlit-ready)
@@ -1216,6 +1262,56 @@ with tab_fin:
 
                 for i, a in enumerate(actions[:3], start=1):
                     st.write(f"{i}. {a}")
+
+
+                        # -----------------------------
+            # Financial RAG Assistant (same tab as simulator)
+            # -----------------------------
+            st.divider()
+            st.header("🧠 Policy & Risk Assistant (RAG)")
+            st.caption(
+                "Ask about PD→ECL, decision bands, reason codes, governance controls, fairness risks, "
+                "limitations, and escalation rules. Answers are grounded in your Financial KB docs."
+            )
+
+            FIN_RAG_READY = bool(os.environ.get("OPENAI_API_KEY")) and FIN_RAG_DB_DIR.exists()
+
+            if not FIN_RAG_READY:
+                st.warning(
+                    "Financial RAG is not ready.\n\n"
+                    "Fix checklist:\n"
+                    "1) Add OPENAI_API_KEY in Streamlit Secrets\n"
+                    "2) Ensure financial_risk_agent/rag_artifacts/vector_store exists in this repo\n"
+                )
+            else:
+                fin_vectordb = load_fin_vectordb(FIN_RAG_DB_DIR)
+
+                qf = st.text_input(
+                    "Ask the Financial Assistant",
+                    key="fin_rag_q",
+                    placeholder="e.g., When is human review required? What do the PD bands mean?"
+                )
+
+                c1, c2 = st.columns([1, 3])
+                with c1:
+                    askf = st.button("Ask", key="fin_rag_ask")
+                with c2:
+                    k = st.slider("Evidence chunks", 3, 10, 5, 1, key="fin_rag_k")
+
+                if askf and qf.strip():
+                    with st.spinner("Retrieving evidence and generating answer..."):
+                        ans = fin_rag_answer(fin_vectordb, qf.strip(), k=int(k))
+                    st.markdown("### Response")
+                    st.write(ans)
+
+                with st.expander("Suggested demo questions"):
+                    st.write(
+                        "1) What are the PD decision bands and why do they exist?\n"
+                        "2) Explain PD → ECL with the exact formula and definitions of LGD/EAD.\n"
+                        "3) When must a human reviewer intervene?\n"
+                        "4) What are the fairness and proxy-discrimination risks?\n"
+                        "5) What are the main limitations of this demo system?\n"
+                    )
 
         
         # -----------------------------
