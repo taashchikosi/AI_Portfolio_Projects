@@ -9,13 +9,17 @@ plotly>=5.23
 python-dotenv>=1.0
 pydantic>=2.8
 
-# Lanchain/RAG
+# Langchain/RAG
 langchain>=0.2.12
 langchain-openai>=0.1.20
 chromadb>=0.5.5
 langchain-community
 tiktoken
 openai
+
+# Pin to prevent protobuf 3.x vs 4.x/5.x pb2 mismatch in opentelemetry (chromadb dep)
+protobuf>=4.21.0
+opentelemetry-exporter-otlp-proto-grpc>=1.24.0
 
 # ML artifacts + downloads
 joblib==1.4.2
