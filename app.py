@@ -25,18 +25,30 @@ st.set_page_config(page_title="AI Portfolio — Decision Support Agents", layout
 BASE_DIR = Path(__file__).resolve().parent
 
 # -----------------------------
-# OpenAI API Key (for RAG)
+# API Keys
 # -----------------------------
+# OpenAI key is still required for embeddings: the Chroma vector stores were
+# built with OpenAIEmbeddings, so queries must use the same embedding space.
 if "OPENAI_API_KEY" in st.secrets:
     os.environ["OPENAI_API_KEY"] = st.secrets["OPENAI_API_KEY"]
 
+# DeepSeek key powers the chat LLM (DeepSeek exposes an OpenAI-compatible API).
+if "DEEPSEEK_API_KEY" in st.secrets:
+    os.environ["DEEPSEEK_API_KEY"] = st.secrets["DEEPSEEK_API_KEY"]
+
 
 # ============================================================
-# Shared LLM loader (used by both RAG assistants)
+# Shared LLM loader (used by all RAG assistants)
 # ============================================================
 @st.cache_resource
 def load_llm():
-    return ChatOpenAI(model="gpt-4.1-mini", temperature=0)
+    # DeepSeek is OpenAI-compatible: same client, different base_url + key.
+    return ChatOpenAI(
+        model="deepseek-chat",
+        temperature=0,
+        base_url="https://api.deepseek.com",
+        api_key=os.environ.get("DEEPSEEK_API_KEY"),
+    )
 
 
 # ============================================================
