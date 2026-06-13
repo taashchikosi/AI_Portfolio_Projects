@@ -22,6 +22,19 @@
 
 ---
 
+## 0.5 Build status (what already exists)
+
+> ✅ **The backend is already built and tested** — it lives in `api/` in the
+> `ai_portfolio_projects` repo. All prediction endpoints are verified against the Streamlit
+> app's outputs; RAG endpoints are wired and gate correctly when keys are absent. A keep-warm
+> GitHub Action is committed at `.github/workflows/keep-warm.yml`.
+>
+> **So the new chat's job is the FRONTEND (§7)** in `Taash_Chikosi_Portfolio`, plus deploying
+> the backend (§6.5) and wiring the two together. Host decision is locked to **Render free +
+> keep-warm pinger**.
+
+---
+
 ## 1. Architecture
 
 ```
@@ -242,7 +255,10 @@ For each agent: model files, the input the API accepts, the transform to apply, 
 
 ## 6. Backend (FastAPI) build spec
 
-### 6.1 Suggested structure (in `ai_portfolio_projects/api/`)
+> ✅ **Already implemented** in `ai_portfolio_projects/api/` exactly as specified below. This
+> section documents what exists; the only remaining backend task is **deploy** (§6.5).
+
+### 6.1 Structure (in `ai_portfolio_projects/api/`)
 ```
 api/
   main.py            # FastAPI app, CORS, routers
@@ -305,13 +321,25 @@ CMD ["sh", "-c", "uvicorn api.main:app --host 0.0.0.0 --port ${PORT}"]
 ```
 
 ### 6.5 Hosting (Render — recommended)
-- New **Web Service** → connect `ai_portfolio_projects` → Docker (or Python) environment.
-- Set env vars: `DEEPSEEK_API_KEY`, `OPENAI_API_KEY`.
+- New **Web Service** → connect `ai_portfolio_projects` → **Docker** env (uses `api/Dockerfile`).
+- Set env vars: `DEEPSEEK_API_KEY`, `OPENAI_API_KEY`, `ALLOWED_ORIGINS` (your Vercel domain(s),
+  comma-separated).
 - Total runtime assets ≈ **90 MB** (models + data + vector stores) — fine for Render.
-- ⚠️ **Free tier sleeps after ~15 min idle** → first request cold-starts (~30–60s). For a smooth
-  portfolio demo, use a paid "Starter" instance or add a keep-warm ping. The frontend should show
-  a loading state and a "warming up" hint on first call.
-- Alternatives: Railway, Fly.io, Hugging Face Spaces (Docker).
+- Verify `GET /health` → `{"status":"ok"}`.
+
+#### Keep-warm (decided approach — avoids cold starts on the free tier)
+Render free sleeps after ~15 min idle → a ~30–60s cold start for the first visitor who *runs* an
+agent. We avoid this with a pinger hitting the lightweight `/health` endpoint:
+
+- **Primary (recommended): UptimeRobot or cron-job.org** — create a free HTTP monitor on
+  `https://<service>.onrender.com/health` every **5 minutes**. External, reliable, never disabled.
+- **Backup (already committed): `.github/workflows/keep-warm.yml`** — pings every ~10 min. Set
+  repo secret `BACKEND_HEALTH_URL` = the same `/health` URL. (Caveat: GitHub disables scheduled
+  workflows after ~60 days of repo inactivity and cron timing drifts — hence UptimeRobot is primary.)
+
+This keeps the service warm within Render's free 750 hrs/month, so visitors effectively never hit
+a cold start. Pair it with the frontend UX in §7.4 as a safety net.
+- Alternatives if you ever move off Render: Railway, Fly.io, Hugging Face Spaces (same Docker image).
 
 ---
 
@@ -343,6 +371,68 @@ CMD ["sh", "-c", "uvicorn api.main:app --host 0.0.0.0 --port ${PORT}"]
 The repo root has 4 consulting-report PDFs (one per agent). Copy them into the portfolio's
 `public/` and add a "Download report" button on each agent page (no backend needed).
 
+### 7.4 Cold-start UX touch (required)
+
+Even with keep-warm, the *very first* backend call after a long idle may take ~30–60s. Every
+agent's "Run"/"Ask" button must show a friendly **warming-up** state instead of a dead spinner.
+Two pieces:
+
+**(a) A fetch helper that escalates the message if the call runs long:**
+```ts
+// lib/api.ts
+const BASE = process.env.NEXT_PUBLIC_API_BASE_URL!;
+
+export async function callAgent<T>(
+  path: string,
+  body?: unknown,
+  onSlow?: () => void,          // fired if the request is taking a while (cold start)
+): Promise<T> {
+  const slowTimer = setTimeout(() => onSlow?.(), 3000); // >3s => likely cold start
+  try {
+    const res = await fetch(`${BASE}${path}`, {
+      method: body ? "POST" : "GET",
+      headers: body ? { "Content-Type": "application/json" } : undefined,
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail ?? res.statusText);
+    return (await res.json()) as T;
+  } finally {
+    clearTimeout(slowTimer);
+  }
+}
+
+// Optional: warm the backend the moment an agent page mounts, before the user clicks.
+export function prewarm() {
+  fetch(`${BASE}/health`).catch(() => {});
+}
+```
+
+**(b) Button/loading state that reads as intentional:**
+```tsx
+const [loading, setLoading] = useState(false);
+const [slow, setSlow] = useState(false);
+
+async function run() {
+  setLoading(true); setSlow(false);
+  try {
+    const data = await callAgent("/esg/predict", inputs, () => setSlow(true));
+    setResult(data);
+  } catch (e) { /* toast error */ }
+  finally { setLoading(false); setSlow(false); }
+}
+
+// in JSX:
+<button onClick={run} disabled={loading}>
+  {loading ? (slow ? "Spinning up the model… (~30s, first run only)" : "Running…") : "Run prediction"}
+</button>
+```
+
+**Recommended touches:**
+- Call `prewarm()` in a `useEffect` when an agent page mounts, so the model is usually warm by the
+  time the user clicks.
+- Show the "~30s, first run only" hint only after the 3s threshold, so warm calls feel instant.
+- For RAG `/ask`, the same pattern applies; note answers always take ~1–3s (LLM latency) even warm.
+
 ---
 
 ## 8. Environment variables
@@ -357,13 +447,15 @@ The repo root has 4 consulting-report PDFs (one per agent). Copy them into the p
 
 ## 9. Execution phases (checklist)
 
-**Phase A — Backend (in `ai_portfolio_projects`)**
-- [ ] Scaffold `api/` (§6.1) + `requirements.txt` (§4) + `Dockerfile` (§6.4).
-- [ ] Port shared RAG util (§3).
-- [ ] Implement the 4 agents' predict + ask endpoints, lifting math from `app.py`.
-- [ ] Add CORS, `/health`, retail startup cache.
-- [ ] Test locally (`uvicorn api.main:app --reload`) against each endpoint.
-- [ ] Deploy to Render; set `DEEPSEEK_API_KEY`, `OPENAI_API_KEY`; verify `/health`.
+**Phase A — Backend (in `ai_portfolio_projects`)** — ✅ built & tested; only deploy remains
+- [x] Scaffold `api/` + `requirements.txt` + `Dockerfile`.
+- [x] Shared RAG util (§3).
+- [x] All 4 agents' predict + ask endpoints (math lifted from `app.py`, verified vs Streamlit).
+- [x] CORS, `/health`, `/ready`, retail feature-frame cache.
+- [x] Local endpoint tests pass.
+- [x] Keep-warm workflow committed (`.github/workflows/keep-warm.yml`).
+- [ ] **Deploy to Render** (Docker); set `DEEPSEEK_API_KEY`, `OPENAI_API_KEY`, `ALLOWED_ORIGINS`; verify `/health`.
+- [ ] **Set up keep-warm** (UptimeRobot on `/health`; set repo secret `BACKEND_HEALTH_URL`).
 
 **Phase B — Frontend (in `Taash_Chikosi_Portfolio`)**
 - [ ] Add API client + `NEXT_PUBLIC_API_BASE_URL`.

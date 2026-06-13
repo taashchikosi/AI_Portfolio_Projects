@@ -1,0 +1,32 @@
+name: keep-warm
+
+# Pings the deployed backend so Render's free tier does not sleep (which would
+# cause a ~30-60s cold start for the first visitor who runs an agent).
+#
+# Setup: add a repo secret BACKEND_HEALTH_URL =
+#   https://<your-render-service>.onrender.com/health
+#
+# NOTE: GitHub disables scheduled workflows after ~60 days of repo inactivity,
+# and cron timing can drift. For a production portfolio, also configure an
+# external pinger (UptimeRobot / cron-job.org) hitting the same /health URL
+# every 5 minutes as the primary keep-warm. This workflow is the repo-native
+# backup.
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"   # every ~10 minutes
+  workflow_dispatch:          # allow manual runs
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping backend /health
+        run: |
+          if [ -z "${{ secrets.BACKEND_HEALTH_URL }}" ]; then
+            echo "BACKEND_HEALTH_URL secret not set; skipping."
+            exit 0
+          fi
+          curl -fsS --max-time 60 "${{ secrets.BACKEND_HEALTH_URL }}" \
+            && echo "ok" \
+            || echo "ping failed (backend may be cold-starting)"
